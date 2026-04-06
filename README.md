@@ -205,7 +205,6 @@ Tudo é exportado de forma estruturada em planilhas Excel e acompanhado de gráf
 - Inclusão de **análise por safra (vintage analysis)**.
 - Estudo de correlação específica em **regime de estresse**.
 - Cálculo de **Unexpected Loss (UL)** e capital econômico.
-- Módulos de **otimização de portfólio** (fronteira eficiente).
 - Integração com sistemas de **pricing em tempo real**.
 
 ---
