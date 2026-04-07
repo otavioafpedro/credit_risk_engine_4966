@@ -4,7 +4,7 @@
 
 ## Visão Geral
 
-Este projeto implementa um motor completo de modelagem de risco de crédito e gestão de portfólio em Python. O sistema é conceitualmente alinhado à **Resolução CMN 4.966/21** e inspirado no framework **IRB (Internal Ratings-Based)**.
+Este projeto implementa um motor integrado de risco de crédito com cálculo de ECL (12 meses e lifetime), stress testing macroeconômico e uma camada avançada de análise de portfólio voltada à decisão de originação e alocação de capital.
 
 Ao longo do desenvolvimento da minha trajetória, já trabalhei com dados reais provenientes de fontes como IPEA, Receita Federal, Banco Central e outras bases econômicas e financeiras relevantes. Por questões de tempo e foco deste projeto, essas integrações ainda não estão implementadas nesta versão, que utiliza dados sintéticos para fins de demonstração estruturada. A incorporação dessas bases reais está prevista como evolução natural do projeto e listada na seção de *Future Enhancements*.
 
@@ -78,6 +78,15 @@ A fórmula base utilizada é:
 $$ECL = PD \times LGD \times EAD \text{ (ajustada a valor presente)}$$
 
 O cálculo inclui o desconto financeiro, a aproximação via *hazard rate* e a agregação mensal de default marginal.
+
+Este framework segue a lógica esperada para modelos de perda esperada sob IFRS 9 / CMN 4.966:
+
+- Separação entre **Stage 1 (12m ECL)** e **Stage 2/3 (Lifetime ECL)**.
+- Incorporação de **forward-looking information** via cenários macroeconômicos.
+- Modelagem independente de **PD, LGD e EAD**.
+- Avaliação dinâmica de deterioração de risco (SICR).
+
+Embora simplificado, o modelo reflete a estrutura conceitual utilizada em instituições financeiras.
 
 ### 3. Classificação por Estágios (4.966 / IFRS 9)
 
@@ -171,6 +180,20 @@ O ponto central desta abordagem é que **um setor não é atrativo apenas pelo s
 
 ---
 
+## Business Interpretation (Leitura Executiva)
+
+Além da modelagem técnica, o sistema permite uma leitura prática da carteira sob a ótica de risco e decisão:
+
+- **Sensibilidade ao cenário macroeconômico:** O aumento progressivo do ECL entre cenários (base → adverso → severo) evidencia a exposição da carteira ao ciclo econômico.
+- **Concentração de risco:** O HHI e a participação setorial permitem identificar concentrações relevantes que podem amplificar perdas em cenários de estresse.
+- **Custo de risco por setor:** A relação entre ECL e EAD evidencia quais setores consomem mais capital econômico.
+- **Diversificação estrutural:** A análise de correlação permite identificar setores com comportamento menos sincronizado, contribuindo para redução do risco agregado.
+- **Direcionamento estratégico:** O índice de atratividade setorial orienta decisões de expansão, manutenção ou restrição de crédito.
+
+O modelo, portanto, não se limita à mensuração de risco, mas apoia diretamente a **alocação eficiente de capital e a estratégia de originação**.
+
+---
+
 ## Outputs do Sistema
 
 Ao ser executado, o sistema gera um conjunto completo de saídas:
@@ -184,6 +207,23 @@ Ao ser executado, o sistema gera um conjunto completo de saídas:
 - Relatórios completos de validação dos modelos.
 
 Tudo é exportado de forma estruturada em planilhas Excel e acompanhado de gráficos elucidativos.
+
+---
+
+## Visual Outputs
+
+O projeto gera visualizações que auxiliam na interpretação da carteira:
+
+- Heatmap PD × LGD (concentração de risco)
+- Matriz de correlação setorial
+- Distribuição por estágio
+- Ranking de atratividade setorial
+- Gráfico de risco vs concentração (bubble chart)
+
+Exemplo:
+
+![Sector Risk Bubble](data/outputs/charts/sector_risk_bubble.png)
+![PD LGD Heatmap](data/outputs/charts/pd_lgd_heatmap.png)
 
 ---
 
