@@ -1,12 +1,27 @@
 # Motor de Risco de Crédito e Gestão de Portfólio 🏦📊
 
 > **ECL, Modelagem IRB, Alocação Setorial e Estratégia de Originação**
+> Motor de risco de crédito com integração macroeconômica real e foco em decisão de portfólio.
 
 ## Visão Geral
 
 Este projeto implementa um motor integrado de risco de crédito com cálculo de ECL (12 meses e lifetime), stress testing macroeconômico e uma camada avançada de análise de portfólio voltada à decisão de originação e alocação de capital.
 
-Ao longo do desenvolvimento da minha trajetória, já trabalhei com dados reais provenientes de fontes como IPEA, Receita Federal, Banco Central e outras bases econômicas e financeiras relevantes. Por questões de tempo e foco deste projeto, essas integrações ainda não estão implementadas nesta versão, que utiliza dados sintéticos para fins de demonstração estruturada. A incorporação dessas bases reais está prevista como evolução natural do projeto e listada na seção de *Future Enhancements*.
+A arquitetura combina:
+
+- **Modelagem de risco individual** (PD, LGD, EAD)
+- **Cálculo de perdas esperadas (ECL)**
+- **Cenários forward-looking**
+- **Gestão de portfólio e concentração**
+- **Integração com dados macroeconômicos reais do Brasil**
+- **Camada de validação macro baseada em dados agregados do sistema de crédito**
+
+O projeto opera em dois modos:
+
+- **Modo sintético (fallback)**: garante reprodutibilidade e controle total do pipeline
+- **Modo com dados reais**: utiliza fatores macroeconômicos provenientes de IPEA, SIDRA/IBGE e Banco Central
+
+Essa abordagem permite conciliar **controle experimental com aderência econômica real**, aproximando o modelo da dinâmica observada no sistema financeiro.
 
 ## Objetivo do Projeto
 
@@ -37,6 +52,15 @@ risk_4966_irb_project/
 │   └── outputs/
 │
 ├── src/
+│   ├── data_sources/
+│   │   ├── ipea_client.py
+│   │   ├── sidra_client.py
+│   │   └── bcb_client.py
+│   │
+│   ├── macro_feature_store.py
+│   ├── macro_mapping.py
+│   ├── macro_credit_analytics.py
+│   │
 │   ├── data_generation.py
 │   ├── feature_engineering.py
 │   ├── pd_model.py
@@ -55,6 +79,50 @@ risk_4966_irb_project/
 ```
 
 ---
+
+## Camada de Dados (Macro Real)
+
+O projeto incorpora uma camada dedicada de ingestão e processamento de dados macroeconômicos reais do Brasil.
+
+### Fontes Integradas
+
+- **Banco Central (BCData/SGS):**
+  - Taxa Selic
+  - Inadimplência agregada (total, PF e PJ)
+  - Saldo de crédito
+  - Spread de crédito
+
+- **SIDRA / IBGE:**
+  - Taxa de desemprego
+  - Indicadores de atividade
+
+- **IPEA:**
+  - Proxy mensal de atividade econômica (PIB mensal)
+
+Essa camada permite que o modelo deixe de depender exclusivamente de premissas sintéticas, passando a refletir, ainda que de forma agregada, a dinâmica real do ciclo de crédito brasileiro.
+
+### Feature Store
+
+Os dados são consolidados em:
+
+- `macro_factors_raw.csv` (formato longo)
+- `macro_factors_wide.csv` (formato model-ready)
+
+A camada de **feature store** permite:
+
+- harmonização temporal (mensal)
+- padronização de séries
+- fallback automático
+- integração opcional ao motor de risco
+
+### Integração com o Motor
+
+O motor pode operar com:
+
+- fatores macro sintéticos (modo padrão)
+- fatores macro reais (modo configurável)
+
+Essa integração é controlada via `config.py`, com fallback automático em caso de falha.
 
 ## Componentes Principais
 
@@ -143,7 +211,7 @@ Também é calculado o **HHI (Herfindahl-Hirschman Index)** para monitorar e qua
 
 O modelo constrói séries temporais de risco por setor e gera uma **matriz de correlação**. Isso permite identificar setores que se movem de forma conjunta (pró-cíclicos), setores descorrelacionados e potenciais oportunidades de diversificação.
 
-### 8. Hedge Natural (Diversificação Estrutural)
+### 8. Hedge "Natural" (Diversificação Estrutural)
 
 Setores com correlação baixa ou negativa são identificados automaticamente como candidatos a **hedge natural** na composição da carteira. Vale ressaltar que este não é um hedge realizado com instrumentos derivativos, mas sim um hedge via diversificação inteligente da exposição de crédito.
 
@@ -194,6 +262,29 @@ O modelo, portanto, não se limita à mensuração de risco, mas apoia diretamen
 
 ---
 
+## Validação Macro do Crédito (Brasil)
+
+O projeto incorpora uma camada de análise baseada em dados agregados reais do sistema de crédito brasileiro.
+
+Essa camada permite:
+
+- análise da evolução histórica de inadimplência
+- comparação entre spread e taxa Selic
+- análise do ciclo de crédito vs atividade econômica
+- construção de matriz de correlação entre variáveis macro e crédito agregado
+
+### Objetivo
+
+Não se trata de validar previsão individual, mas de:
+
+- ancorar o modelo em comportamento observado
+- enriquecer a interpretação econômica
+- tornar os cenários mais defensáveis
+
+Essa abordagem conecta o motor de risco com a dinâmica real do sistema financeiro.
+
+---
+
 ## Outputs do Sistema
 
 Ao ser executado, o sistema gera um conjunto completo de saídas:
@@ -224,28 +315,37 @@ Exemplo:
 
 ![Sector Risk Bubble](data/outputs/charts/sector_risk_bubble.png)
 ![PD LGD Heatmap](data/outputs/charts/pd_lgd_heatmap.png)
+![Inadimplência no tempo](data/outputs/charts/macro_credit_delinquency.png)
 
 ---
 
 ## Limitações Atuais
 
-- Utilização de dados sintéticos.
+- A modelagem individual ainda utiliza dados sintéticos.
+- A camada macro é agregada (não microdados de contrato).
 - Cálculo de PD *lifetime* simplificado.
 - Regras de *staging* simplificadas.
-- Ausência de uma estrutura formal de governança de modelos.
-- Não inclui o cálculo de capital regulatório pelo método IRB.
-- Não incorpora LGD *downturn*.
-- Sem trilha completa de auditoria de dados.
+- Ausência de governança formal de modelos (validação independente, versionamento completo).
+- Não inclui cálculo de capital regulatório IRB completo.
+- LGD *downturn* não implementado.
+- Validação macro é descritiva (não causal)..
 
 ## Future Enhancements (Próximos Passos)
 
-- **Integração com bases de dados reais:** IPEA, Banco Central, Receita Federal e dados internos anonimizados.
-- Implementação de **modelos de survival** (análise de sobrevivência) para a projeção da PD.
-- Uso de **matriz de transição (Cadeias de Markov)** para evolução dos ratings.
-- Inclusão de **análise por safra (vintage analysis)**.
-- Estudo de correlação específica em **regime de estresse**.
-- Cálculo de **Unexpected Loss (UL)** e capital econômico.
-- Integração com sistemas de **pricing em tempo real**.
+### Modelagem
+- Modelos de survival (hazard)
+- Matriz de transição (Markov)
+- Vintage analysis
+
+### Risco e Capital
+- Unexpected Loss (UL)
+- Capital econômico
+- LGD downturn
+
+### Produção e Governança
+- Governança completa de modelos
+- Integração com dados reais
+- Integração com pricing e decisão
 
 ---
 
