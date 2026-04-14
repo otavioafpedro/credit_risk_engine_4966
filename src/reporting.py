@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import matplotlib.pyplot as plt
+import matplotlib
 import numpy as np
 import pandas as pd
+
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 
 OUTPUT_DPI = 180
@@ -202,3 +206,107 @@ def plot_sector_risk_bubble(sector_summary: pd.DataFrame, path: str) -> None:
     plt.tight_layout()
     plt.savefig(_prepare_output(path), dpi=OUTPUT_DPI, bbox_inches="tight")
     plt.close()
+
+
+def plot_macro_credit_delinquency(reference_frame: pd.DataFrame, path: str) -> None:
+    df_plot = reference_frame[
+        ["delinquency_total", "delinquency_pf_total", "delinquency_pj_total"]
+    ].dropna(how="all")
+    if df_plot.empty:
+        return
+
+    _base_style(figsize=(9.4, 5.5))
+    plt.plot(df_plot.index, df_plot["delinquency_total"] * 100.0, label="Total", linewidth=2.0)
+    if "delinquency_pf_total" in df_plot.columns:
+        plt.plot(df_plot.index, df_plot["delinquency_pf_total"] * 100.0, label="PF", alpha=0.90)
+    if "delinquency_pj_total" in df_plot.columns:
+        plt.plot(df_plot.index, df_plot["delinquency_pj_total"] * 100.0, label="PJ", alpha=0.90)
+
+    plt.title("Inadimplencia agregada ao longo do tempo")
+    plt.xlabel("Data")
+    plt.ylabel("Percentual (%)")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(_prepare_output(path), dpi=OUTPUT_DPI, bbox_inches="tight")
+    plt.close()
+
+
+def plot_macro_credit_spread_vs_selic(reference_frame: pd.DataFrame, path: str) -> None:
+    df_plot = reference_frame[["spread_total", "selic_monthly_rate"]].dropna()
+    if df_plot.empty:
+        return
+
+    _base_style(figsize=(9.4, 5.5))
+    plt.plot(df_plot.index, df_plot["spread_total"] * 100.0, label="Spread total", linewidth=2.0)
+    plt.plot(df_plot.index, df_plot["selic_monthly_rate"] * 100.0, label="Selic mensal", linewidth=2.0)
+    plt.title("Spread agregado vs Selic")
+    plt.xlabel("Data")
+    plt.ylabel("Percentual (%)")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(_prepare_output(path), dpi=OUTPUT_DPI, bbox_inches="tight")
+    plt.close()
+
+
+def plot_macro_credit_vs_activity(reference_frame: pd.DataFrame, path: str) -> None:
+    df_plot = reference_frame[["credit_stock_total", "activity_level"]].dropna()
+    if df_plot.empty:
+        return
+
+    normalized_credit = _normalize_to_base_100(df_plot["credit_stock_total"])
+    normalized_activity = _normalize_to_base_100(df_plot["activity_level"])
+    common_index = normalized_credit.index.intersection(normalized_activity.index)
+    if common_index.empty:
+        return
+
+    _base_style(figsize=(9.4, 5.5))
+    plt.plot(common_index, normalized_credit.loc[common_index], label="Credito total (base 100)", linewidth=2.0)
+    plt.plot(common_index, normalized_activity.loc[common_index], label="Atividade (base 100)", linewidth=2.0)
+    plt.title("Credito total vs atividade")
+    plt.xlabel("Data")
+    plt.ylabel("Indice normalizado")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(_prepare_output(path), dpi=OUTPUT_DPI, bbox_inches="tight")
+    plt.close()
+
+
+def plot_macro_credit_correlation_heatmap(corr_matrix: pd.DataFrame, path: str) -> None:
+    if corr_matrix.empty:
+        return
+
+    matrix = corr_matrix.values
+    labels = corr_matrix.columns.tolist()
+
+    _base_style(figsize=(8.8, 6.5))
+    plt.grid(False)
+    plt.imshow(matrix, aspect="auto", vmin=-1, vmax=1)
+    plt.colorbar(label="Correlacao")
+    plt.title("Correlacao entre macro e credito agregado")
+    plt.xticks(
+        ticks=np.arange(len(labels)),
+        labels=labels,
+        rotation=35,
+        ha="right",
+    )
+    plt.yticks(ticks=np.arange(len(labels)), labels=labels)
+
+    for i in range(matrix.shape[0]):
+        for j in range(matrix.shape[1]):
+            plt.text(j, i, f"{matrix[i, j]:.2f}", ha="center", va="center", fontsize=8)
+
+    plt.tight_layout()
+    plt.savefig(_prepare_output(path), dpi=OUTPUT_DPI, bbox_inches="tight")
+    plt.close()
+
+
+def _normalize_to_base_100(series: pd.Series) -> pd.Series:
+    clean_series = series.dropna()
+    if clean_series.empty:
+        return clean_series
+
+    base_value = clean_series.iloc[0]
+    if base_value == 0:
+        return clean_series * np.nan
+
+    return clean_series / base_value * 100.0
