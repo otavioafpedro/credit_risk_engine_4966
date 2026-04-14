@@ -1,14 +1,22 @@
 from __future__ import annotations
 
+from typing import Mapping
+
 import numpy as np
 import pandas as pd
 
 
 class SyntheticCreditDataGenerator:
-    def __init__(self, n_clients: int = 8000, random_state: int = 42):
+    def __init__(
+        self,
+        n_clients: int = 8000,
+        random_state: int = 42,
+        macro_factors: Mapping[str, float] | None = None,
+    ):
         self.n_clients = n_clients
         self.random_state = random_state
         self.rng = np.random.default_rng(random_state)
+        self.macro_factors = dict(macro_factors) if macro_factors is not None else None
 
     def generate(self) -> pd.DataFrame:
         ids = np.arange(1, self.n_clients + 1)
@@ -41,9 +49,7 @@ class SyntheticCreditDataGenerator:
         balance = np.exp(self.rng.normal(9.1, 0.9, self.n_clients))
         undrawn = np.exp(self.rng.normal(7.0, 1.0, self.n_clients)) * (product == "credit_card")
 
-        unemployment = self.rng.normal(0.085, 0.012, self.n_clients)
-        selic_proxy = self.rng.normal(0.115, 0.015, self.n_clients)
-        gdp_growth = self.rng.normal(0.020, 0.015, self.n_clients)
+        unemployment, selic_proxy, gdp_growth = self._build_macro_columns()
 
         sector_risk_map = {
             "agribusiness": -0.10,
@@ -123,3 +129,24 @@ class SyntheticCreditDataGenerator:
         )
 
         return df
+
+    def _build_macro_columns(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        if self.macro_factors is None:
+            unemployment = self.rng.normal(0.085, 0.012, self.n_clients)
+            selic_proxy = self.rng.normal(0.115, 0.015, self.n_clients)
+            gdp_growth = self.rng.normal(0.020, 0.015, self.n_clients)
+            return unemployment, selic_proxy, gdp_growth
+
+        required_factors = ("unemployment", "selic_proxy", "gdp_growth")
+        missing_factors = [factor for factor in required_factors if factor not in self.macro_factors]
+        if missing_factors:
+            raise ValueError(
+                "Fatores macro reais incompletos para a geracao da carteira. "
+                f"Campos ausentes: {', '.join(missing_factors)}"
+            )
+
+        return (
+            np.full(self.n_clients, float(self.macro_factors["unemployment"])),
+            np.full(self.n_clients, float(self.macro_factors["selic_proxy"])),
+            np.full(self.n_clients, float(self.macro_factors["gdp_growth"])),
+        )

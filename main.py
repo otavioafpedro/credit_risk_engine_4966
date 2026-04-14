@@ -6,15 +6,21 @@ import pandas as pd
 
 from config import (
     DISCOUNT_RATE_ANNUAL,
+    MACRO_MAX_FFILL_MONTHS,
+    MACRO_REFERENCE_DATE,
+    MACRO_WIDE_PATH,
     MONTHS_FORWARD,
     N_CLIENTS,
     RANDOM_STATE,
     SECTOR_TIME_SERIES_MONTHS,
+    USE_REAL_MACRO,
 )
 from src.data_generation import SyntheticCreditDataGenerator
 from src.ead_model import EADModel
 from src.ecl_engine import calculate_ecl
+from src.macro_feature_store import MacroFeatureStore
 from src.lgd_model import LGDModel
+from src.macro_mapping import MacroFactorSnapshot
 from src.pd_model import PDModel
 from src.portfolio_policy import (
     build_sector_attractiveness_index,
@@ -43,12 +49,46 @@ from src.stress_testing import SCENARIOS, apply_scenario, apply_macro_overlay
 from src.validation import calibration_table, population_stability_index, score_pd_model
 
 
+def _resolve_macro_mode() -> MacroFactorSnapshot | None:
+    if not USE_REAL_MACRO:
+        print("Running with synthetic macro factors")
+        return None
+
+    try:
+        feature_store = MacroFeatureStore(
+            MACRO_WIDE_PATH,
+            max_ffill_months=MACRO_MAX_FFILL_MONTHS,
+        )
+        macro_snapshot = feature_store.get_model_macro_snapshot(
+            reference_date=MACRO_REFERENCE_DATE,
+        )
+        print(
+            "Running with real macro factors from feature store "
+            f"({macro_snapshot.reference_date.date()})"
+        )
+        print(
+            "Macro factor mapping: "
+            f"unemployment <- {macro_snapshot.selected_series['unemployment']}; "
+            f"selic_proxy <- {macro_snapshot.selected_series['selic_proxy']}; "
+            f"gdp_growth <- {macro_snapshot.selected_series['gdp_growth']}"
+        )
+        return macro_snapshot
+    except FileNotFoundError:
+        print("Macro file not found, falling back to synthetic factors")
+        return None
+    except Exception as exc:
+        print(f"Real macro factors unavailable ({exc}), falling back to synthetic factors")
+        return None
+
+
 def main() -> None:
     os.makedirs("data/outputs/charts", exist_ok=True)
 
+    macro_snapshot = _resolve_macro_mode()
     generator = SyntheticCreditDataGenerator(
         n_clients=N_CLIENTS,
         random_state=RANDOM_STATE,
+        macro_factors=macro_snapshot.as_dict() if macro_snapshot is not None else None,
     )
     df = generator.generate()
 
