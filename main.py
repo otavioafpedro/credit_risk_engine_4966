@@ -13,11 +13,15 @@ from config import (
     N_CLIENTS,
     RANDOM_STATE,
     SECTOR_TIME_SERIES_MONTHS,
+    STAGE2_DPD_THRESHOLD,
+    STAGE2_PD_ABSOLUTE_INCREASE,
+    STAGE2_PD_RELATIVE_MULTIPLIER,
+    STAGE3_DPD_THRESHOLD,
     USE_REAL_MACRO,
 )
 from src.data_generation import SyntheticCreditDataGenerator
 from src.ead_model import EADModel
-from src.ecl_engine import calculate_ecl
+from src.ecl_engine import calculate_probability_weighted_ecl
 from src.macro_feature_store import MacroFeatureStore
 from src.lgd_model import LGDModel
 from src.macro_mapping import MacroFactorSnapshot
@@ -104,28 +108,27 @@ def main() -> None:
     ead_mae = ead_model.fit(df)
     df["ead_model"] = ead_model.predict_ead(df)
 
-    df["stage"] = assign_stage(df, df["pd_12m_model"].values)
-
-    ecl_df = calculate_ecl(
-        pd_12m=df["pd_12m_model"].values,
-        lgd=df["lgd_model"].values,
-        ead=df["ead_model"].values,
-        stage=df["stage"],
-        months_forward=MONTHS_FORWARD,
-        annual_rate=DISCOUNT_RATE_ANNUAL,
+    df["stage"] = assign_stage(
+        df,
+        df["pd_12m_model"].values,
+        stage2_pd_relative_multiplier=STAGE2_PD_RELATIVE_MULTIPLIER,
+        stage2_pd_absolute_increase=STAGE2_PD_ABSOLUTE_INCREASE,
+        stage2_dpd_threshold=STAGE2_DPD_THRESHOLD,
+        stage3_dpd_threshold=STAGE3_DPD_THRESHOLD,
     )
 
-    result = pd.concat(
-        [df, ecl_df[["ecl_12m", "ecl_lifetime", "final_ecl"]]],
-        axis=1,
-    )
-
-    val_metrics = score_pd_model(result["default_12m"], result["pd_12m_model"])
-    calib = calibration_table(result["default_12m"], result["pd_12m_model"])
-    psi = population_stability_index(result["true_pd_12m"], result["pd_12m_model"])
-
-    scenarios_summary: list[dict] = []
+    scenario_overrides: dict[str, dict[str, object]] = {
+        "base": {
+            "pd_12m": df["pd_12m_model"].values,
+            "lgd": df["lgd_model"].values,
+            "ead": df["ead_model"].values,
+            "stage": df["stage"],
+        }
+    }
     for scenario_name in SCENARIOS:
+        if scenario_name == "base":
+            continue
+
         stressed = apply_scenario(df, scenario_name)
 
         base_pd = pd_model.predict_pd_12m(stressed)
@@ -141,29 +144,43 @@ def main() -> None:
         stressed["pd_12m_model"] = stressed_pd
         stressed["lgd_model"] = stressed_lgd
         stressed["ead_model"] = base_ead
-        stressed["stage"] = assign_stage(stressed, stressed["pd_12m_model"].values)
-
-        stressed_ecl = calculate_ecl(
-            pd_12m=stressed["pd_12m_model"].values,
-            lgd=stressed["lgd_model"].values,
-            ead=stressed["ead_model"].values,
-            stage=stressed["stage"],
-            months_forward=MONTHS_FORWARD,
-            annual_rate=DISCOUNT_RATE_ANNUAL,
+        stressed["stage"] = assign_stage(
+            stressed,
+            stressed["pd_12m_model"].values,
+            stage2_pd_relative_multiplier=STAGE2_PD_RELATIVE_MULTIPLIER,
+            stage2_pd_absolute_increase=STAGE2_PD_ABSOLUTE_INCREASE,
+            stage2_dpd_threshold=STAGE2_DPD_THRESHOLD,
+            stage3_dpd_threshold=STAGE3_DPD_THRESHOLD,
         )
+        scenario_overrides[scenario_name] = {
+            "pd_12m": stressed["pd_12m_model"].values,
+            "lgd": stressed["lgd_model"].values,
+            "ead": stressed["ead_model"].values,
+            "stage": stressed["stage"],
+        }
 
-        scenarios_summary.append(
-            {
-                "scenario": scenario_name,
-                "total_ecl": float(stressed_ecl["final_ecl"].sum()),
-                "avg_pd": float(stressed["pd_12m_model"].mean()),
-                "avg_lgd": float(stressed["lgd_model"].mean()),
-                "avg_ead": float(stressed["ead_model"].mean()),
-                "stage2_plus_share": float((stressed["stage"] >= 2).mean()),
-            }
-        )
+    weighted_ecl_result = calculate_probability_weighted_ecl(
+        pd_12m=df["pd_12m_model"].values,
+        lgd=df["lgd_model"].values,
+        ead=df["ead_model"].values,
+        stage=df["stage"],
+        scenario_config=SCENARIOS,
+        months_forward=MONTHS_FORWARD,
+        annual_rate=DISCOUNT_RATE_ANNUAL,
+        reference_date=macro_snapshot.reference_date if macro_snapshot is not None else None,
+        scenario_overrides=scenario_overrides,
+    )
 
-    scenarios_df = pd.DataFrame(scenarios_summary)
+    weighted_ecl_columns = [
+        column for column in weighted_ecl_result.ecl_frame.columns if column not in df.columns
+    ]
+    result = pd.concat([df, weighted_ecl_result.ecl_frame[weighted_ecl_columns]], axis=1)
+
+    val_metrics = score_pd_model(result["default_12m"], result["pd_12m_model"])
+    calib = calibration_table(result["default_12m"], result["pd_12m_model"])
+    psi = population_stability_index(result["true_pd_12m"], result["pd_12m_model"])
+
+    scenarios_df = weighted_ecl_result.scenario_summary
 
     sector_summary = sector_exposure_summary(result)
     portfolio_hhi = sector_hhi(sector_summary)
@@ -231,7 +248,9 @@ def main() -> None:
     print(f"LGD MAE: {lgd_mae:.4f}")
     print(f"EAD MAE: {ead_mae:.2f}")
     print(f"PSI true_pd vs model_pd: {psi:.4f}")
-    print(f"ECL total (base): {result['final_ecl'].sum():,.2f}")
+    print(f"ECL total (probability-weighted): {result['final_ecl_weighted'].sum():,.2f}")
+    if "ecl_base" in result:
+        print(f"ECL total (base scenario): {result['ecl_base'].sum():,.2f}")
     print(f"HHI setorial da carteira: {portfolio_hhi:.4f}")
 
     print("\nResumo de cenários:")

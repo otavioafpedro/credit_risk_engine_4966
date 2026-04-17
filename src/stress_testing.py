@@ -6,6 +6,7 @@ import pandas as pd
 
 SCENARIOS = {
     "base": {
+        "weight": 0.60,
         "unemployment_shift": 0.00,
         "selic_shift": 0.00,
         "gdp_shift": 0.00,
@@ -13,6 +14,7 @@ SCENARIOS = {
         "lgd_multiplier": 1.00,
     },
     "adverse": {
+        "weight": 0.30,
         "unemployment_shift": 0.02,
         "selic_shift": 0.02,
         "gdp_shift": -0.02,
@@ -20,6 +22,7 @@ SCENARIOS = {
         "lgd_multiplier": 1.05,
     },
     "severe": {
+        "weight": 0.10,
         "unemployment_shift": 0.04,
         "selic_shift": 0.04,
         "gdp_shift": -0.04,

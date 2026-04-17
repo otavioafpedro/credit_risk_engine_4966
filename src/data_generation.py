@@ -50,6 +50,17 @@ class SyntheticCreditDataGenerator:
         undrawn = np.exp(self.rng.normal(7.0, 1.0, self.n_clients)) * (product == "credit_card")
 
         unemployment, selic_proxy, gdp_growth = self._build_macro_columns()
+        watchlist_flag, restructured_flag, financial_distress_flag, problem_asset_flag = (
+            self._build_observed_distress_flags(
+                income=income,
+                bureau_score=bureau_score,
+                utilization=utilization,
+                months_on_book=months_on_book,
+                dpd=dpd,
+                dti=dti,
+                segment=segment,
+            )
+        )
 
         sector_risk_map = {
             "agribusiness": -0.10,
@@ -120,6 +131,10 @@ class SyntheticCreditDataGenerator:
                 "unemployment": unemployment,
                 "selic_proxy": selic_proxy,
                 "gdp_growth": gdp_growth,
+                "watchlist_flag": watchlist_flag,
+                "restructured_flag": restructured_flag,
+                "financial_distress_flag": financial_distress_flag,
+                "problem_asset_flag": problem_asset_flag,
                 "true_pd_12m": np.clip(true_pd_12m, 0.0001, 0.9999),
                 "default_12m": default_12m,
                 "true_lgd": true_lgd,
@@ -149,4 +164,56 @@ class SyntheticCreditDataGenerator:
             np.full(self.n_clients, float(self.macro_factors["unemployment"])),
             np.full(self.n_clients, float(self.macro_factors["selic_proxy"])),
             np.full(self.n_clients, float(self.macro_factors["gdp_growth"])),
+        )
+
+    def _build_observed_distress_flags(
+        self,
+        income: np.ndarray,
+        bureau_score: np.ndarray,
+        utilization: np.ndarray,
+        months_on_book: np.ndarray,
+        dpd: np.ndarray,
+        dti: np.ndarray,
+        segment: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Builds observable distress flags without relying on future default outcomes."""
+
+        watchlist_flag = (
+            (
+                (dpd >= 15)
+                & (
+                    (bureau_score < 620)
+                    | (utilization > 0.75)
+                    | (dti > 0.45)
+                )
+            )
+            | ((bureau_score < 540) & (segment == "sme"))
+        ).astype(int)
+
+        income_p10 = np.quantile(income, 0.10)
+        restructured_flag = (
+            ((dpd >= 60) & (months_on_book >= 12) & (dti > 0.60))
+            | ((dti > 0.85) & (bureau_score < 500) & (months_on_book >= 12))
+        ).astype(int)
+
+        financial_distress_flag = (
+            ((dpd >= 60) & (utilization > 0.90) & (dti > 0.55))
+            | (
+                (income <= income_p10)
+                & (dti > 0.85)
+                & (bureau_score < 500)
+                & (utilization > 0.80)
+            )
+        ).astype(int)
+
+        problem_asset_flag = (
+            (dpd >= 90)
+            | ((restructured_flag == 1) & (financial_distress_flag == 1))
+        ).astype(int)
+
+        return (
+            watchlist_flag,
+            restructured_flag,
+            financial_distress_flag,
+            problem_asset_flag,
         )
